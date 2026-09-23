@@ -117,6 +117,9 @@ function weatherSummary() {
       const soil = key => { if (!h.time || !h[key]) return null; const v = h.time.map((t, i) => t.startsWith(today) ? h[key][i] : null).filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
       const next7 = days.slice(idx, idx + 7);
       const past = days.slice(Math.max(0, idx - 3), idx);
+      const past7 = days.slice(Math.max(0, idx - 6), idx + 1);   // сегодня + 6 дней назад
+      const past14 = days.slice(Math.max(0, idx - 13), idx + 1); // сегодня + 13 дней назад
+      const sum = a => a.reduce((s, x) => s + (x.rain || 0), 0);
       let frost7 = null, frostDay = null;
       next7.forEach(x => { if (x.tmin != null && (frost7 === null || x.tmin < frost7)) { frost7 = x.tmin; frostDay = x.date; } });
       const tomorrow = days[idx + 1];
@@ -135,6 +138,8 @@ function weatherSummary() {
       Object.assign(out, {
         today: td, tmean: td.tmean, tmin: td.tmin, tmax: td.tmax, windToday: td.wind ?? 0,
         soil6: soil('soil_temperature_6cm'), soil18: soil('soil_temperature_18cm'), soil54: soil('soil_temperature_54cm'),
+        soilMoist: soil('soil_moisture_3_to_9cm'),
+        rain7: sum(past7), rain14: sum(past14),
         frost7, frostDay, rainSoon: rainy(td) || rainy(tomorrow),
         wet3: past.reduce((s, x) => s + (x.rain || 0), 0) >= 5 && (td.tmean ?? 0) >= 15,
         nightMin7: Math.min(...next7.map(x => x.tmin ?? 99)),
@@ -146,6 +151,7 @@ function weatherSummary() {
   }
   if (!out.src && manualWx && manualWx.date === today) {
     Object.assign(out, { src: 'manual', tmean: manualWx.tmean, tmin: manualWx.tmin, tmax: manualWx.tmax ?? manualWx.tmean, soil18: manualWx.soil ?? null, soil6: null,
+      soilMoist: null, rain7: null, rain14: null,
       frost7: manualWx.frost ? -1 : null, frostDay: null, rainSoon: !!manualWx.rain, windToday: manualWx.wind ? 6 : 0, wet3: false,
       nightMin7: manualWx.tmin, dayMax7: manualWx.tmax ?? manualWx.tmean, sat: null });
   }
@@ -180,8 +186,22 @@ function ageOf(b) {
 }
 
 // динамические подсказки к правилам
-function dynText(key, w) {
+// Оценка обеспеченности влагой по факту осадков (не из книги — собственный расчёт по погоде).
+function waterAdvice(w, stage) {
+  if (stage === 'winter') return null;
+  if (stage === 'autumn' || stage === 'cover') return { level: 'skip', text: 'С сентября и после укрытия полив по книге не проводят (с. 67, 73) — независимо от осадков.' };
+  if (w.rain7 == null) return { level: 'unknown', text: 'Нет данных об осадках за неделю — обновите погоду при наличии сети или введите вручную.' };
+  const hot = (w.tmean ?? 0) >= 20;
+  const r7 = w.rain7.toFixed(1), r14 = w.rain14 != null ? w.rain14.toFixed(1) : '?';
+  if (w.rain7 < 5 && hot) return { level: 'need', text: `За 7 дней выпало всего ${r7} мм, и тепло (среднесуточная ${fmtT(w.tmean)}) — почва наверняка подсыхает. Стоит полить, особенно на горошении (книга: до 20 вёдер под куст за раз, с. 67).` };
+  if (w.rain7 < 10) return { level: 'watch', text: `За 7 дней ${r7} мм осадков — маловато. Проверьте землю на штык лопаты: сухая — полейте.` };
+  if (w.rain7 >= 20) return { level: 'skip', text: `За 7 дней выпало ${r7} мм — этого достаточно, дополнительный полив не нужен.` };
+  return { level: 'ok', text: `За 7 дней ${r7} мм, за 14 — ${r14} мм. Влаги хватает, отдельный полив не требуется.` };
+}
+
+function dynText(key, w, stage) {
   if (!w || !w.src) return 'Нет данных о погоде — обновите при наличии сети или введите вручную.';
+  if (key === 'waterCheck') { const a = waterAdvice(w, stage); return a ? a.text : 'В этот период полив по книге не проводят.'; }
   if (key === 'openReady') {
     const okSoil = w.soil18 != null ? w.soil18 >= 10 : null, okNight = w.nightMin7 >= 5, okDay = w.dayMax7 >= 12;
     const mark = v => v == null ? '?' : v ? '✔' : '✘';
@@ -250,6 +270,19 @@ async function viewToday() {
   }
   h += '</div>';
 
+  // влага и полив — по факту осадков, не из книги
+  if (w.src) {
+    const adv = waterAdvice(w, stage);
+    if (adv) {
+      const cls = { need: 'warn', watch: 'warn', skip: 'info', ok: 'info', unknown: 'info' }[adv.level];
+      h += `<div class="card"><h2>Влага и полив</h2>` +
+        (w.rain7 != null ? `<div class="grid2"><div class="stat"><b>${w.rain7.toFixed(0)} мм</b><span>осадки за 7 дней</span></div><div class="stat"><b>${w.rain14 != null ? w.rain14.toFixed(0) : '?'} мм</b><span>осадки за 14 дней</span></div></div>` : '') +
+        (w.soilMoist != null ? `<div class="muted small" style="margin-top:6px">Влажность почвы (3–9 см, по модели Open-Meteo): ${(w.soilMoist * 100).toFixed(0)}% — ориентировочно, точность зависит от типа почвы.</div>` : '') +
+        `<div class="alert ${cls}" style="margin-top:8px">${esc(adv.text)}</div>` +
+        `<div class="muted small" style="margin-top:4px">Расчёт по факту осадков — моя логика поверх погоды Open-Meteo, не из книги.</div></div>`;
+    }
+  }
+
   // этап
   h += `<div class="card"><h2>Этап: ${esc(st.name)}</h2>
     <div class="muted small">${settings.stage === 'auto' ? 'Определён автоматически по дате, погоде и вашим отметкам.' : 'Выбран вручную.'} Нажмите, чтобы сменить:</div>
@@ -272,7 +305,7 @@ async function viewToday() {
       const d = done[r.id];
       const box = (r.kind === 'warn' || r.kind === 'dont') ? '<span style="width:22px;flex:0 0 22px;text-align:center">' + (r.kind === 'warn' ? '⚠' : '⛔') + '</span>' : `<input type="checkbox" data-chk="${r.id}" ${d ? 'checked' : ''}>`;
       return `<li class="${d ? 'done' : ''}">${box}<div><div class="tx"><span class="tag ${KIND[r.kind][1]}">${KIND[r.kind][0]}</span>${esc(r.text)}</div>` +
-        (r.why ? `<div class="why">${esc(r.why)}</div>` : '') + (r.dyn ? `<div class="dyn">${esc(dynText(r.dyn, w))}</div>` : '') + srcLabel(r) + '</div></li>';
+        (r.why ? `<div class="why">${esc(r.why)}</div>` : '') + (r.dyn ? `<div class="dyn">${esc(dynText(r.dyn, w, stage))}</div>` : '') + srcLabel(r) + '</div></li>';
     }).join('') + '</ul><div class="muted small" style="margin-top:8px">Отмеченное попадает в журнал работ.</div></div>';
   return h;
 }
