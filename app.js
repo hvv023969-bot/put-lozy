@@ -26,10 +26,10 @@ const DB = {
     if (this.db) return Promise.resolve(this.db);
     return new Promise((res, rej) => {
       let req;
-      try { req = indexedDB.open('lozadb', 1); } catch (e) { return rej(e); }
+      try { req = indexedDB.open('lozadb', 3); } catch (e) { return rej(e); }
       req.onupgradeneeded = () => {
         const d = req.result;
-        ['photos', 'journal', 'bushes'].forEach(s => { if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id' }); });
+        ['photos', 'journal', 'bushes', 'products', 'crops'].forEach(s => { if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id' }); });
       };
       req.onsuccess = () => { this.db = req.result; res(this.db); };
       req.onerror = () => rej(req.error);
@@ -61,7 +61,8 @@ let tab = LS.get('tab', 'today');
 let sub = null;          // подраздел во вкладке «Ещё»
 let worksStage = null;
 let pickedSigns = new Set();
-let bushes = [], journal = [], photos = [];
+let bushes = [], journal = [], photos = [], products = [], crops = [];
+let qrPending = null; // текст/ссылка, только что считанные с QR-кода, ждут сохранения в карточке препарата
 
 function saveSettings() { LS.set('settings', settings); }
 function saveFlags() { LS.set('flags', flags); }
@@ -382,6 +383,57 @@ function viewSZR() {
       <span class="src">Источники: ${esc(s.sources.join('; '))}</span></div>`).join('');
 }
 
+function viewCrops() {
+  return `<div class="card">${backBtn}<h2>Мои культуры</h2><div class="muted small">Сад и огород, не только виноград. Список нужен, чтобы позже привязывать к нему обработки и подсказки по соседству.</div></div>` +
+    (crops.length ? `<div class="card">` + crops.map(c => `<div class="list-item"><div class="row" style="justify-content:space-between"><b>${esc(c.name)}</b><button class="small ghost" data-delcrop="${c.id}">✕</button></div>
+      <div class="muted small">${esc(c.type)}${c.variety ? ' · ' + esc(c.variety) : ''}${c.year ? ' · посажено ' + esc(c.year) : ''}</div>
+      ${c.note ? `<div class="small">${esc(c.note)}</div>` : ''}</div>`).join('') + `</div>` : '<div class="card muted">Пока ничего не добавлено.</div>') +
+    `<div class="card"><h2>Добавить</h2>
+    <label>Название</label><input id="cName" placeholder="Например: Яблоня у забора">
+    <label>Тип</label><select id="cType">${CROP_TYPES.map(t => `<option>${t}</option>`).join('')}</select>
+    <label>Сорт (если знаете)</label><input id="cVariety">
+    <label>Год посадки</label><input id="cYear" type="number" inputmode="numeric" value="${year}">
+    <label>Заметка</label><input id="cNote">
+    <div class="sticky-actions"><button data-act="addCrop">Добавить</button></div></div>`;
+}
+
+function companionCard(x) {
+  const li = a => a && a.length ? '<ul>' + a.map(o => `<li><b>${esc(o.who)}</b> — ${esc(o.why)}</li>`).join('') + '</ul>' : '';
+  return `<details id="c-${x.id}"><summary>${esc(x.name)}</summary>
+    ${x.good && x.good.length ? '<h3>Хорошие соседи</h3>' + li(x.good) : ''}
+    ${x.neutral && x.neutral.length ? '<h3>Нейтральные</h3>' + li(x.neutral) : ''}
+    ${x.bad && x.bad.length ? '<h3>Плохие соседи</h3>' + li(x.bad) : ''}
+    <div style="margin-top:6px"><span class="src">Источники: ${esc(x.sources.join('; '))}</span></div></details>`;
+}
+
+function viewCompanions() {
+  return `<div class="card">${backBtn}<h2>Соседство культур</h2><div class="alert info">Большая часть таких списков в огородной литературе — многолетние наблюдения и опыт, а не строгие опыты (в отличие, скажем, от доз удобрений). Точно доказана лишь часть механизмов: аллелопатия грецкого ореха, общие болезни/вредители у родственных культур, конкуренция за свет и влагу. Остальное — «по практике многих огородников», и это тоже честно написано у каждого пункта.</div></div>` +
+    `<div class="card">` + COMPANIONS.map(companionCard).join('') + `</div>`;
+}
+
+function viewProducts() {
+  return `<div class="card">${backBtn}<h2>Мои препараты</h2><div class="muted small">Ваш личный список СЗР — сколько угодно записей, свои дозы и сроки. Отдельно от «Справочника СЗР» (там — общие примеры).</div></div>` +
+    (products.length ? `<div class="card">` + products.map(p => `<div class="list-item"><div class="row" style="justify-content:space-between"><b>${esc(p.name)}</b><button class="small ghost" data-delprod="${p.id}">✕</button></div>` +
+      (p.ai ? `<div class="muted small">${esc(p.ai)}</div>` : '') +
+      (p.crops ? `<div class="small" style="margin-top:2px"><b>Культуры:</b> ${esc(p.crops)}</div>` : '') +
+      (p.phi ? `<div class="small">${esc(p.phi)}</div>` : '') +
+      (p.dose ? `<div class="small">${esc(p.dose)}</div>` : '') +
+      (p.note ? `<div class="muted small">${esc(p.note)}</div>` : '') +
+      (p.qr ? `<div class="small">QR: ${/^https?:\/\//.test(p.qr) ? `<a href="${esc(p.qr)}" target="_blank" rel="noopener">${esc(p.qr)}</a>` : esc(p.qr)}</div>` : '') +
+      `</div>`).join('') + `</div>` : '<div class="card muted">Пока ни одного препарата не добавлено.</div>') +
+    `<div class="card"><h2>Добавить препарат</h2>
+    <label>Название (как на этикетке)</label><input id="pName" placeholder="Например: Регент">
+    <label>Действующее вещество, класс</label><input id="pAi" placeholder="Например: фипронил, фенилпиразолы">
+    <label>Культуры</label><input id="pCrops" placeholder="Картофель, томаты">
+    <label>Срок ожидания до сбора урожая</label><input id="pPhi" placeholder="Например: 30 дней">
+    <label>Доза, норма расхода</label><input id="pDose" placeholder="Как на этикетке">
+    <label>Заметка</label><input id="pNote">
+    <label>QR-код с упаковки</label>
+    <div class="row" style="gap:8px"><input id="pQr" placeholder="Считайте камерой или впишите вручную" value="${esc(qrPending || '')}" style="flex:1"><button type="button" class="ghost small" data-act="qrShoot">Считать QR</button></div>
+    <div class="muted small" style="margin-top:4px">QR обычно ведёт на страницу товара или маркировку «Честный знак» — сама доза и вещество в код чаще всего не зашиты, их всё равно впишите вручную по этикетке. Ссылка просто сохранится для быстрого перехода при наличии сети.</div>
+    <div class="sticky-actions"><button data-act="addProduct">Добавить</button></div></div>`;
+}
+
 function viewStorage() {
   return `<div class="card">${backBtn}<h2>Хранение урожая</h2><div class="muted small">${esc(STORAGE_NOTE)}</div></div>` +
     STORAGE.map(s => `<div class="card"><h3>${esc(s.name)}</h3>
@@ -488,11 +540,14 @@ function viewMore() {
   if (sub === 'storage') return viewStorage();
   if (sub === 'pests') return viewPests();
   if (sub === 'szr') return viewSZR();
+  if (sub === 'products') return viewProducts();
+  if (sub === 'crops') return viewCrops();
+  if (sub === 'companions') return viewCompanions();
   return `<div class="card"><h2>Ещё</h2>
     ${[['feed', 'Подкормки и обработки', 'дозы, сроки, правила баковых смесей'], ['bushes', 'Мои кусты', 'сорт, год посадки — от них зависит чек-лист'], ['journal', 'Журнал работ', 'что и когда сделано'], ['sort', 'Определить сорт', 'по грозди и ягоде — какой сорт из книги похож'], ['vars', 'Сорта из книги', 'срок созревания, морозостойкость'], ['settings', 'Настройки и резервная копия', 'место, погода, перенос данных']]
       .map(([k, t, d]) => `<div class="list-item"><a href="#" data-go="${k}"><b>${t}</b></a><div class="muted small">${d}</div></div>`).join('')}</div>
     <div class="card"><h2>Сад и огород</h2><div class="muted small">Не из книги про виноград — общий раздел про остальной участок, дополняется постепенно.</div>
-    ${[['weeds', 'Сорняки', 'пырей, портулак, осот, одуванчик, щирица, амброзия'], ['pests', 'Вредители', 'колорадский жук и другие — как узнать, профилактика, обработка'], ['szr', 'Справочник СЗР', 'действующее вещество, срок ожидания, с чем не смешивать'], ['storage', 'Хранение урожая', 'что перебрать перед закладкой, при какой температуре и влажности держать']]
+    ${[['crops', 'Мои культуры', `сад и огород помимо винограда, ${crops.length} шт.`], ['companions', 'Соседство культур', 'что с чем сажать рядом, а что — нет'], ['weeds', 'Сорняки', 'пырей, портулак, осот, одуванчик, щирица, амброзия'], ['pests', 'Вредители', 'колорадский жук и другие — как узнать, профилактика, обработка'], ['szr', 'Справочник СЗР', 'общие примеры: действующее вещество, срок ожидания'], ['products', 'Мои препараты', `ваш список, ${products.length} шт. — можно считать QR с этикетки`], ['storage', 'Хранение урожая', 'что перебрать перед закладкой, при какой температуре и влажности держать']]
       .map(([k, t, d]) => `<div class="list-item"><a href="#" data-go="${k}"><b>${t}</b></a><div class="muted small">${d}</div></div>`).join('')}</div>`;
 }
 const backBtn = '<button class="small ghost" data-go="">← Ещё</button>';
@@ -518,16 +573,22 @@ function viewBushes() {
 function viewJournal() {
   const list = [...journal].sort((a, b) => (b.date + b.at).localeCompare(a.date + a.at));
   const bOpts = bushes.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+  const pOpts = products.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
   return `<div class="card">${backBtn}<h2>Новая запись</h2>
     <label>Дата</label><input id="jDate" type="date" value="${todayISO()}">
     <label>Работа</label><select id="jWork">${WORKS.map(x => `<option>${x}</option>`).join('')}</select>
     ${bushes.length ? `<label>Кусты (не выбрано — все)</label><select id="jBush" multiple size="${Math.min(5, bushes.length)}">${bOpts}</select>` : ''}
-    <label>Препарат, доза</label><input id="jDrug" placeholder="Например: Топаз 6 г / 10 л">
+    <label>Культура (если не виноград)</label><input id="jCrop" placeholder="Например: картофель, яблоня">
+    ${products.length ? `<label>Препарат из своего списка (не обязательно)</label><select id="jProd"><option value="">—</option>${pOpts}</select>` : ''}
+    <label>Препарат/доза текстом (если не из списка)</label><input id="jDrug" placeholder="Например: Топаз 6 г / 10 л">
     <label>Заметка</label><input id="jNote">
     <div class="sticky-actions"><button data-act="addJ">Записать</button></div></div>
     <div class="card"><h2>Журнал</h2>` +
     (list.length ? list.map(j => `<div class="list-item"><div class="row" style="justify-content:space-between"><b>${fmtDate(j.date)} · ${esc(j.work)}</b><button class="small ghost" data-delj="${j.id}">✕</button></div>
-      ${j.drug ? `<div>${esc(j.drug)}</div>` : ''}${j.note ? `<div class="muted small">${esc(j.note)}</div>` : ''}${j.bushes && j.bushes.length ? `<div class="muted small">Кусты: ${j.bushes.map(id => esc((bushes.find(b => b.id === id) || {}).name || '?')).join(', ')}</div>` : ''}</div>`).join('') : '<div class="muted">Записей пока нет.</div>') + '</div>';
+      ${j.crop ? `<div class="muted small">Культура: ${esc(j.crop)}</div>` : ''}
+      ${j.product ? `<div>Препарат: ${esc(j.product)}</div>` : ''}${j.drug ? `<div>${esc(j.drug)}</div>` : ''}${j.note ? `<div class="muted small">${esc(j.note)}</div>` : ''}
+      ${j.bushes && j.bushes.length ? `<div class="muted small">Кусты: ${j.bushes.map(id => esc((bushes.find(b => b.id === id) || {}).name || '?')).join(', ')}</div>` : ''}
+      ${j.phiDate ? `<div class="dyn">Убирать урожай не раньше ${fmtDate(j.phiDate)} — срок ожидания по препарату</div>` : ''}</div>`).join('') : '<div class="muted">Записей пока нет.</div>') + '</div>';
 }
 
 function viewVars() {
@@ -584,6 +645,8 @@ document.addEventListener('click', async e => {
   }
   if (ds.delbush) { await DB.del('bushes', ds.delbush); bushes = await DB.all('bushes'); render(); return; }
   if (ds.delj) { await DB.del('journal', ds.delj); journal = await DB.all('journal'); render(); return; }
+  if (ds.delprod) { await DB.del('products', ds.delprod); products = await DB.all('products'); render(); return; }
+  if (ds.delcrop) { await DB.del('crops', ds.delcrop); crops = await DB.all('crops'); render(); return; }
   const act = ds.act; if (!act) return;
   if (act === 'wx') refreshWeather(false);
   if (act === 'manual') manualEntry();
@@ -602,7 +665,11 @@ document.addEventListener('click', async e => {
   }
   if (act === 'addJ') {
     const sel = $('#jBush'); const bs = sel ? [...sel.selectedOptions].map(o => o.value) : [];
-    await DB.put('journal', { id: uid(), at: new Date().toISOString(), date: $('#jDate').value || todayISO(), work: $('#jWork').value, drug: $('#jDrug').value.trim(), note: $('#jNote').value.trim(), bushes: bs });
+    const date = $('#jDate').value || todayISO();
+    const prodSel = $('#jProd'); const prod = prodSel && prodSel.value ? products.find(p => p.id === prodSel.value) : null;
+    let phiDate = null;
+    if (prod && prod.phi) { const m = prod.phi.match(/\d+/); if (m) { const d = new Date(date + 'T12:00'); d.setDate(d.getDate() + parseInt(m[0], 10)); phiDate = isoDate(d); } }
+    await DB.put('journal', { id: uid(), at: new Date().toISOString(), date, work: $('#jWork').value, crop: $('#jCrop').value.trim(), product: prod ? prod.name : '', drug: $('#jDrug').value.trim(), note: $('#jNote').value.trim(), bushes: bs, phiDate });
     journal = await DB.all('journal'); toast('Записано'); render();
   }
   if (act === 'savePlace') {
@@ -614,6 +681,17 @@ document.addEventListener('click', async e => {
   if (act === 'export') exportData(false);
   if (act === 'exportPh') exportData(true);
   if (act === 'import') $('#importInput').click();
+  if (act === 'qrShoot') $('#qrInput').click();
+  if (act === 'addProduct') {
+    const name = $('#pName').value.trim(); if (!name) { toast('Впишите название препарата'); return; }
+    await DB.put('products', { id: uid(), name, ai: $('#pAi').value.trim(), crops: $('#pCrops').value.trim(), phi: $('#pPhi').value.trim(), dose: $('#pDose').value.trim(), note: $('#pNote').value.trim(), qr: $('#pQr').value.trim(), added: todayISO() });
+    products = await DB.all('products'); qrPending = null; toast('Препарат добавлен'); render();
+  }
+  if (act === 'addCrop') {
+    const name = $('#cName').value.trim(); if (!name) { toast('Впишите название'); return; }
+    await DB.put('crops', { id: uid(), name, type: $('#cType').value, variety: $('#cVariety').value.trim(), year: $('#cYear').value, note: $('#cNote').value.trim() });
+    crops = await DB.all('crops'); toast('Добавлено'); render();
+  }
 });
 
 document.addEventListener('change', async e => {
@@ -647,6 +725,22 @@ $('#fileInput').addEventListener('change', async e => {
   } catch (err) { toast('Не удалось сохранить фото: ' + err.message); }
 });
 
+$('#qrInput').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    if (typeof jsQR !== 'function') { toast('Не удалось загрузить модуль распознавания QR — попробуйте вписать вручную'); return; }
+    const bmp = await createImageBitmap(f);
+    const max = 1400, k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    const res = jsQR(img.data, img.width, img.height);
+    if (res && res.data) { qrPending = res.data; toast('QR распознан'); }
+    else { qrPending = null; toast('QR-код не найден на фото — попробуйте снять ровнее и ближе, или впишите вручную'); }
+  } catch (err) { toast('Не удалось распознать фото: ' + err.message); }
+  sub = 'products'; tab = 'more'; render();
+});
+
 $('#importInput').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
   try {
@@ -658,6 +752,8 @@ $('#importInput').addEventListener('change', async e => {
     if (data.checks) { checks = data.checks; LS.set('checks', checks); }
     await DB.clear('bushes'); for (const b of data.bushes || []) await DB.put('bushes', b);
     await DB.clear('journal'); for (const j of data.journal || []) await DB.put('journal', j);
+    await DB.clear('products'); for (const p of data.products || []) await DB.put('products', p);
+    await DB.clear('crops'); for (const c of data.crops || []) await DB.put('crops', c);
     for (const p of data.photos || []) { const blob = await (await fetch(p.data)).blob(); delete p.data; p.blob = blob; await DB.put('photos', p); }
     await loadAll(); toast('Данные восстановлены'); render();
   } catch (err) { toast('Не удалось прочитать файл: ' + err.message); }
@@ -707,7 +803,7 @@ function download(blob, name) {
 }
 const toDataURL = blob => new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
 async function exportData(withPhotos) {
-  const data = { app: 'put-lozy', version: 1, at: new Date().toISOString(), settings, flags, checks, bushes: await DB.all('bushes'), journal: await DB.all('journal') };
+  const data = { app: 'put-lozy', version: 1, at: new Date().toISOString(), settings, flags, checks, bushes: await DB.all('bushes'), journal: await DB.all('journal'), products: await DB.all('products'), crops: await DB.all('crops') };
   if (withPhotos) { data.photos = []; for (const p of await DB.all('photos')) { const { blob, ...rest } = p; data.photos.push({ ...rest, data: await toDataURL(blob) }); } }
   download(new Blob([JSON.stringify(data)], { type: 'application/json' }), `put-lozy_${todayISO()}${withPhotos ? '_foto' : ''}.json`);
 }
@@ -742,7 +838,7 @@ function toast(msg) {
 
 // ---------- запуск ----------
 async function loadAll() {
-  try { bushes = await DB.all('bushes'); journal = await DB.all('journal'); photos = await DB.all('photos'); } catch (e) { bushes = []; journal = []; photos = []; }
+  try { bushes = await DB.all('bushes'); journal = await DB.all('journal'); photos = await DB.all('photos'); products = await DB.all('products'); crops = await DB.all('crops'); } catch (e) { bushes = []; journal = []; photos = []; products = []; crops = []; }
 }
 (async function start() {
   await loadAll();
