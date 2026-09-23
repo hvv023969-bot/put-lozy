@@ -383,6 +383,22 @@ function viewSZR() {
       <span class="src">Источники: ${esc(s.sources.join('; '))}</span></div>`).join('');
 }
 
+function viewSoil() {
+  return `<div class="card">${backBtn}<h2>Почва участка</h2>
+    <p>${esc(SOIL_NOTE.region)}.</p>
+    <p>${esc(SOIL_NOTE.ph)}.</p>
+    <div class="dyn">${esc(SOIL_NOTE.vinograd)}.</div>
+    <div class="alert info" style="margin-top:8px">${esc(SOIL_NOTE.recommend)}.</div>
+    <div style="margin-top:6px"><span class="src">Источники: ${esc(SOIL_NOTE.sources.join('; '))}</span></div></div>` +
+    `<div class="card"><h2>Зола: куда её сыпать, а куда нет</h2><p>${esc(ASH_NOTE.intro)}</p>
+      <h3>На вашей почве — не стоит</h3><ul>${ASH_NOTE.badHere.map(x => `<li><b>${esc(x.who)}</b> — ${esc(x.why)}</li>`).join('')}</ul>
+      <h3>Нормально в обычных дозах</h3><p class="small">${esc(ASH_NOTE.ok)}</p>
+      <h3>Где зола действительно нужна</h3><ul>${ASH_NOTE.goodOnAcidic.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+      <div style="margin-top:6px"><span class="src">Источники: ${esc(ASH_NOTE.sources.join('; '))}</span></div></div>` +
+    `<div class="card"><h2>Растения-индикаторы почвы</h2><div class="muted small">Направление, а не число — точный pH даёт только тест. Корневищные растения (пырей, мята) может разнести механически при обработке мотоблоком независимо от химии почвы — тогда это не индикатор.</div></div>` +
+    INDICATORS.map(g => `<div class="card"><h3>${esc(g.title)}</h3><ul>${g.items.map(i => `<li><b>${esc(i.who)}</b>${i.note ? ' — ' + esc(i.note) : ''}</li>`).join('')}</ul></div>`).join('');
+}
+
 function viewCrops() {
   return `<div class="card">${backBtn}<h2>Мои культуры</h2><div class="muted small">Сад и огород, не только виноград. Список нужен, чтобы позже привязывать к нему обработки и подсказки по соседству.</div></div>` +
     (crops.length ? `<div class="card">` + crops.map(c => `<div class="list-item"><div class="row" style="justify-content:space-between"><b>${esc(c.name)}</b><button class="small ghost" data-delcrop="${c.id}">✕</button></div>
@@ -543,11 +559,12 @@ function viewMore() {
   if (sub === 'products') return viewProducts();
   if (sub === 'crops') return viewCrops();
   if (sub === 'companions') return viewCompanions();
+  if (sub === 'soil') return viewSoil();
   return `<div class="card"><h2>Ещё</h2>
     ${[['feed', 'Подкормки и обработки', 'дозы, сроки, правила баковых смесей'], ['bushes', 'Мои кусты', 'сорт, год посадки — от них зависит чек-лист'], ['journal', 'Журнал работ', 'что и когда сделано'], ['sort', 'Определить сорт', 'по грозди и ягоде — какой сорт из книги похож'], ['vars', 'Сорта из книги', 'срок созревания, морозостойкость'], ['settings', 'Настройки и резервная копия', 'место, погода, перенос данных']]
       .map(([k, t, d]) => `<div class="list-item"><a href="#" data-go="${k}"><b>${t}</b></a><div class="muted small">${d}</div></div>`).join('')}</div>
     <div class="card"><h2>Сад и огород</h2><div class="muted small">Не из книги про виноград — общий раздел про остальной участок, дополняется постепенно.</div>
-    ${[['crops', 'Мои культуры', `сад и огород помимо винограда, ${crops.length} шт.`], ['companions', 'Соседство культур', 'что с чем сажать рядом, а что — нет'], ['weeds', 'Сорняки', 'пырей, портулак, осот, одуванчик, щирица, амброзия'], ['pests', 'Вредители', 'колорадский жук и другие — как узнать, профилактика, обработка'], ['szr', 'Справочник СЗР', 'общие примеры: действующее вещество, срок ожидания'], ['products', 'Мои препараты', `ваш список, ${products.length} шт. — можно считать QR с этикетки`], ['storage', 'Хранение урожая', 'что перебрать перед закладкой, при какой температуре и влажности держать']]
+    ${[['crops', 'Мои культуры', `сад и огород помимо винограда, ${crops.length} шт.`], ['soil', 'Почва участка', 'тип почвы, ориентировочный pH, растения-индикаторы'], ['companions', 'Соседство культур', 'что с чем сажать рядом, а что — нет'], ['weeds', 'Сорняки', 'пырей, портулак, осот, одуванчик, щирица, амброзия'], ['pests', 'Вредители', 'колорадский жук и другие — как узнать, профилактика, обработка'], ['szr', 'Справочник СЗР', 'общие примеры: действующее вещество, срок ожидания'], ['products', 'Мои препараты', `ваш список, ${products.length} шт. — можно считать QR с этикетки`], ['storage', 'Хранение урожая', 'что перебрать перед закладкой, при какой температуре и влажности держать']]
       .map(([k, t, d]) => `<div class="list-item"><a href="#" data-go="${k}"><b>${t}</b></a><div class="muted small">${d}</div></div>`).join('')}</div>`;
 }
 const backBtn = '<button class="small ghost" data-go="">← Ещё</button>';
