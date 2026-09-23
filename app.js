@@ -341,6 +341,56 @@ function diseaseCard(d, open) {
     <div style="margin-top:6px">${d.ext ? '<span class="src">Источники: ' + esc(d.sources.join('; ')) + '</span>' : `<span class="src">книга, с. ${d.src}</span>`}</div></details>`;
 }
 
+function weedCard(x) {
+  const li = a => a && a.length ? '<ul>' + a.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>' : '';
+  return `<details id="w-${x.id}"><summary>${esc(x.name)} <span class="muted small">— ${esc(x.type)}</span></summary>
+    <h3>Как узнать</h3>${li(x.symptoms)}
+    <h3>Почему живучий</h3>${li(x.cause)}
+    <h3>Профилактика</h3>${li(x.prevent)}
+    <h3>Как бороться</h3>${li(x.treat)}
+    <div style="margin-top:6px"><span class="src">Источники: ${esc(x.sources.join('; '))}</span></div></details>`;
+}
+
+function viewWeeds() {
+  return `<div class="card">${backBtn}<h2>Сорняки</h2><div class="muted small">Не из книги про виноград — общая огородная практика и внешние источники, помечены отдельно.</div></div>` +
+    `<div class="card">` + WEEDS.map(weedCard).join('') + `</div>`;
+}
+
+function pestCard(x) {
+  const li = a => a && a.length ? '<ul>' + a.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>' : '';
+  return `<details id="p-${x.id}"><summary>${esc(x.name)} <span class="muted small">— ${esc(x.type)}</span></summary>
+    ${x.diff ? `<div class="alert warn">${esc(x.diff)}</div>` : ''}
+    <h3>Как узнать</h3>${li(x.symptoms)}
+    <h3>Биология</h3>${li(x.cause)}
+    <h3>Профилактика</h3>${li(x.prevent)}
+    <h3>Как бороться</h3>${li(x.treat)}${x.mix ? `<div class="muted small" style="margin-top:4px">${esc(x.mix)}</div>` : ''}
+    <div style="margin-top:6px"><span class="src">Источники: ${esc(x.sources.join('; '))}</span></div></details>`;
+}
+
+function viewPests() {
+  return `<div class="card">${backBtn}<h2>Вредители</h2><div class="muted small">Не из книги про виноград — внешние источники, список пока небольшой, дополняется по мере надобности.</div></div>` +
+    `<div class="card">` + PESTS.map(pestCard).join('') + `</div>`;
+}
+
+function viewSZR() {
+  return `<div class="card">${backBtn}<h2>Справочник СЗР</h2><div class="alert warn">Это не замена этикетке. Перед применением всегда проверяйте дозировку, срок ожидания и актуальную регистрацию препарата — они могут меняться.</div></div>` +
+    SZR.map(s => `<div class="card"><h3>${esc(s.name)}</h3>
+      <div class="muted small">Действующее вещество: ${esc(s.ai)} · ${esc(s.cls)}</div>
+      <div style="margin-top:6px"><b>Против:</b> ${esc(s.targets.join(', '))}</div>
+      <div class="dyn" style="margin-top:6px">Срок ожидания: ${esc(s.phi)}</div>
+      ${'<ul style="margin-top:6px">' + s.notes.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>'}
+      <span class="src">Источники: ${esc(s.sources.join('; '))}</span></div>`).join('');
+}
+
+function viewStorage() {
+  return `<div class="card">${backBtn}<h2>Хранение урожая</h2><div class="muted small">${esc(STORAGE_NOTE)}</div></div>` +
+    STORAGE.map(s => `<div class="card"><h3>${esc(s.name)}</h3>
+      <div><b>Перед закладкой:</b>${'<ul>' + s.before.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>'}</div>
+      <div class="dyn" style="margin-top:4px">${esc(s.cond)}</div>
+      <div style="margin-top:6px"><b>Пока лежит:</b>${'<ul>' + s.watch.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>'}</div>
+      <span class="src">общая практика</span></div>`).join('');
+}
+
 function viewIll() {
   let h = `<div class="card"><h2>Что вижу на кусте?</h2><div class="muted small">Отметьте признаки — сверху появятся подходящие варианты.</div>`;
   if (pickedSigns.size) {
@@ -434,8 +484,15 @@ function viewMore() {
   if (sub === 'vars') return viewVars();
   if (sub === 'settings') return viewSettings();
   if (sub === 'sort') return viewSort();
+  if (sub === 'weeds') return viewWeeds();
+  if (sub === 'storage') return viewStorage();
+  if (sub === 'pests') return viewPests();
+  if (sub === 'szr') return viewSZR();
   return `<div class="card"><h2>Ещё</h2>
     ${[['feed', 'Подкормки и обработки', 'дозы, сроки, правила баковых смесей'], ['bushes', 'Мои кусты', 'сорт, год посадки — от них зависит чек-лист'], ['journal', 'Журнал работ', 'что и когда сделано'], ['sort', 'Определить сорт', 'по грозди и ягоде — какой сорт из книги похож'], ['vars', 'Сорта из книги', 'срок созревания, морозостойкость'], ['settings', 'Настройки и резервная копия', 'место, погода, перенос данных']]
+      .map(([k, t, d]) => `<div class="list-item"><a href="#" data-go="${k}"><b>${t}</b></a><div class="muted small">${d}</div></div>`).join('')}</div>
+    <div class="card"><h2>Сад и огород</h2><div class="muted small">Не из книги про виноград — общий раздел про остальной участок, дополняется постепенно.</div>
+    ${[['weeds', 'Сорняки', 'пырей, портулак, осот, одуванчик, щирица, амброзия'], ['pests', 'Вредители', 'колорадский жук и другие — как узнать, профилактика, обработка'], ['szr', 'Справочник СЗР', 'действующее вещество, срок ожидания, с чем не смешивать'], ['storage', 'Хранение урожая', 'что перебрать перед закладкой, при какой температуре и влажности держать']]
       .map(([k, t, d]) => `<div class="list-item"><a href="#" data-go="${k}"><b>${t}</b></a><div class="muted small">${d}</div></div>`).join('')}</div>`;
 }
 const backBtn = '<button class="small ghost" data-go="">← Ещё</button>';

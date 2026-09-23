@@ -1,5 +1,5 @@
 // Кэш приложения для работы без интернета. При изменении файлов увеличить версию.
-const CACHE = 'put-lozy-v4';
+const CACHE = 'put-lozy-v6';
 const FILES = ['./', './index.html', './app.js', './data.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
