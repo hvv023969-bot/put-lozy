@@ -358,6 +358,41 @@ async function viewPhotoOne(id) {
     <div class="muted small" style="margin-top:8px">«Отправить на разбор» откроет меню «Поделиться»: выберите Claude или мессенджер. К фото приложится готовый вопрос.</div></div>`;
 }
 let openPhoto = null;
+let sortPicks = {};      // выбранные признаки для определителя сорта
+let sortFor = null;      // куст, для которого определяем сорт
+let pendingVar = null;   // сорт, выбранный в определителе, для формы нового куста
+
+function rankVarieties() {
+  const keys = Object.keys(sortPicks);
+  return Object.entries(VTRAITS).map(([n, t]) => {
+    let s = 0, known = 0;
+    keys.forEach(k => { const v = t[k]; if (v == null) { s += 0.4; } else { known++; if (v.includes(sortPicks[k])) s += 1; } });
+    return { n, t, pct: keys.length ? Math.round(100 * s / keys.length) : 0, known };
+  }).sort((a, b) => b.pct - a.pct || b.known - a.known);
+}
+
+function viewSort() {
+  const b = sortFor ? bushes.find(x => x.id === sortFor) : null;
+  let h = `<div class="card">${backBtn}<h2>Определить сорт${b ? ': ' + esc(b.name) : ''}</h2>
+    <div class="muted small">Отметьте, что видите на зрелой грозди. Сравниваются 31 сорт из книги. Если вашего сорта в книге нет — совпадение будет низким у всех.</div>` +
+    VFEATS.map(f => `<h3>${f.name}</h3><div class="chips">` + f.opts.map(([v, t]) => `<button class="chip ${sortPicks[f.id] === v ? 'on' : ''}" data-sf="${f.id}" data-sv="${v}">${esc(t)}</button>`).join('') + '</div>').join('') + '</div>';
+  const n = Object.keys(sortPicks).length;
+  if (n) {
+    const res = rankVarieties().slice(0, 6);
+    h += `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Похожие сорта</h2><button class="small ghost" data-act="clearSort">Сбросить</button></div>` +
+      res.map(x => {
+        const v = VARIETIES.find(y => y.n === x.n) || {};
+        const ph = PHOTO_LINKS[x.n];
+        return `<div class="list-item"><b>${esc(x.n)}</b> <span class="score">совпадение ${x.pct}%</span><div class="small">${esc(x.t.note)}</div><div class="muted small">${esc(v.g || '')} · созревание ${esc(v.ripen || '?')} дн. · мороз ${esc(v.frost || '?')} · книга, с. ${v.page}</div>` +
+          `<div class="row" style="margin-top:4px;gap:6px"><button class="small ghost" data-pickvar="${esc(x.n)}">${b ? 'Записать этот сорт кусту' : 'Добавить куст с этим сортом'}</button>` +
+          (ph ? `<a class="small" href="${esc(ph.url)}" target="_blank" rel="noopener">Фото у автора →</a>` : '') + '</div>' +
+          (ph && ph.note ? `<div class="muted small">${esc(ph.note)}</div>` : '') + '</div>';
+      }).join('') +
+      `<div class="muted small" style="margin-top:8px">${n < 4 ? 'Отметьте больше признаков — выбор станет точнее. ' : ''}Это подсказка: у разных сортов бывают похожие грозди, а на молодых кустах ягоды мельче. Надёжнее всего — сравнить с фото сорта и с тем, что писал продавец саженцев.</div></div>`;
+  }
+  h += `<div class="card"><h2>Про листья</h2><div class="small">В книге листья описаны только у двух сортов («Гарольд» — светло-изумрудный пятилопастной с пушком снизу; «Юкка» — трёхлопастной, почти цельный), поэтому определять по листу приложение не берётся. Лист — хорошая подсказка для опытного глаза, но сфотографируйте лист сверху и снизу рядом с гроздью и отправьте на разбор, когда будет сеть.</div></div>`;
+  return h;
+}
 
 function viewMore() {
   if (sub === 'feed') return viewFeed();
@@ -365,8 +400,9 @@ function viewMore() {
   if (sub === 'journal') return viewJournal();
   if (sub === 'vars') return viewVars();
   if (sub === 'settings') return viewSettings();
+  if (sub === 'sort') return viewSort();
   return `<div class="card"><h2>Ещё</h2>
-    ${[['feed', 'Подкормки и обработки', 'дозы, сроки, правила баковых смесей'], ['bushes', 'Мои кусты', 'сорт, год посадки — от них зависит чек-лист'], ['journal', 'Журнал работ', 'что и когда сделано'], ['vars', 'Сорта из книги', 'срок созревания, морозостойкость'], ['settings', 'Настройки и резервная копия', 'место, погода, перенос данных']]
+    ${[['feed', 'Подкормки и обработки', 'дозы, сроки, правила баковых смесей'], ['bushes', 'Мои кусты', 'сорт, год посадки — от них зависит чек-лист'], ['journal', 'Журнал работ', 'что и когда сделано'], ['sort', 'Определить сорт', 'по грозди и ягоде — какой сорт из книги похож'], ['vars', 'Сорта из книги', 'срок созревания, морозостойкость'], ['settings', 'Настройки и резервная копия', 'место, погода, перенос данных']]
       .map(([k, t, d]) => `<div class="list-item"><a href="#" data-go="${k}"><b>${t}</b></a><div class="muted small">${d}</div></div>`).join('')}</div>`;
 }
 const backBtn = '<button class="small ghost" data-go="">← Ещё</button>';
@@ -380,10 +416,10 @@ function viewFeed() {
 function viewBushes() {
   const vOpts = VARIETIES.map(v => `<option>${esc(v.n)}</option>`).join('');
   return `<div class="card">${backBtn}<h2>Мои кусты</h2>` +
-    (bushes.length ? bushes.map(b => `<div class="list-item row" style="justify-content:space-between"><div><b>${esc(b.name)}</b> — ${esc(b.variety || '')}<div class="muted small">посажен ${esc(b.year || '?')} · ${AGES.find(a => a.id === ageOf(b)).name}${b.note ? ' · ' + esc(b.note) : ''}</div></div><button class="small ghost" data-delbush="${b.id}">✕</button></div>`).join('') : '<div class="muted">Кустов пока нет. Без списка чек-лист считает все кусты взрослыми (можно поменять в настройках).</div>') +
+    (bushes.length ? bushes.map(b => `<div class="list-item row" style="justify-content:space-between"><div style="flex:1"><b>${esc(b.name)}</b><select data-bvar="${b.id}" style="margin:4px 0">${VARIETIES.map(v => `<option ${v.n === b.variety ? 'selected' : ''}>${esc(v.n)}</option>`).join('')}</select>${b.variety === 'Сорт не известен' ? `<a href="#" data-sortfor="${b.id}">Определить сорт этого куста →</a>` : ''}<div class="muted small">посажен ${esc(b.year || '?')} · ${AGES.find(a => a.id === ageOf(b)).name}${b.note ? ' · ' + esc(b.note) : ''}</div></div><button class="small ghost" data-delbush="${b.id}">✕</button></div>`).join('') : '<div class="muted">Кустов пока нет. Без списка чек-лист считает все кусты взрослыми (можно поменять в настройках).</div>') +
     `</div><div class="card"><h2>Добавить куст</h2>
     <label>Номер или название</label><input id="bName" placeholder="Например: 1 ряд, 3 куст">
-    <label>Сорт</label><select id="bVar">${vOpts}</select>
+    <label>Сорт</label><select id="bVar">${VARIETIES.map(v => `<option ${v.n === pendingVar ? 'selected' : ''}>${esc(v.n)}</option>`).join('')}</select><div class="small"><a href="#" data-go="sort">Не знаете сорт? Определить по грозди</a></div>
     <label>Год посадки</label><input id="bYear" type="number" inputmode="numeric" value="${year}">
     <label>Заметка</label><input id="bNote">
     <div class="sticky-actions"><button data-act="addBush">Добавить</button></div></div>`;
@@ -408,7 +444,10 @@ function viewVars() {
   const groups = [...new Set(VARIETIES.filter(v => v.g).map(v => v.g))];
   return `<div class="card">${backBtn}<h2>Сорта из книги</h2><div class="muted small">Срок — дней от распускания почек до зрелости. Морозостойкость — по данным книги.</div></div>` +
     groups.map(g => `<div class="card"><h3>${g}</h3><table><tr><th>Сорт</th><th>Срок</th><th>Мороз</th><th>с.</th></tr>` +
-      VARIETIES.filter(v => v.g === g).map(v => `<tr><td><b>${esc(v.n)}</b>${v.color ? `<div class="muted small">${esc(v.color)}</div>` : ''}</td><td>${esc(v.ripen)}</td><td>${esc(v.frost)}</td><td>${v.page}</td></tr>`).join('') + '</table></div>').join('');
+      VARIETIES.filter(v => v.g === g).map(v => {
+        const ph = PHOTO_LINKS[v.n];
+        return `<tr><td><b>${esc(v.n)}</b>${v.color ? `<div class="muted small">${esc(v.color)}</div>` : ''}${ph ? `<div class="small"><a href="${esc(ph.url)}" target="_blank" rel="noopener">фото у автора →</a></div>` : ''}</td><td>${esc(v.ripen)}</td><td>${esc(v.frost)}</td><td>${v.page}</td></tr>`;
+      }).join('') + '</table></div>').join('');
 }
 
 function viewSettings() {
@@ -421,7 +460,7 @@ function viewSettings() {
     <div class="card"><h2>Резервная копия</h2><div class="muted small">Все данные живут только в этом телефоне. Делайте копию — её можно перенести на другой телефон или компьютер.</div>
     <div class="sticky-actions"><button data-act="export">Сохранить копию (без фото)</button><button class="ghost" data-act="exportPh">С фото</button><button class="ghost" data-act="import">Восстановить из файла</button></div></div>
     <div class="card"><h2>О справочнике</h2><div class="small">Основа — книга П. П. Данилюка и В. С. Мурыгина «Виноград. Путь лозы. Шпаргалка-трекер: от черенка до грозди» (АСТ, 2026). Номера страниц указаны у каждого пункта. Пункты «общая практика» и «другие источники» — не из книги. Справочник для личного пользования.</div>
-    <div class="muted small" style="margin-top:6px">Версия 1.0</div></div>`;
+    <div class="muted small" style="margin-top:6px">Версия 1.1</div></div>`;
 }
 
 // ---------- события ----------
@@ -438,7 +477,7 @@ document.addEventListener('click', async e => {
   if (!t) return;
   const ds = t.dataset;
   if (t.closest('#tabs')) { tab = ds.tab; sub = null; openPhoto = null; LS.set('tab', tab); render(); window.scrollTo(0, 0); return; }
-  if (ds.go !== undefined) { e.preventDefault(); tab = 'more'; sub = ds.go || null; render(); window.scrollTo(0, 0); return; }
+  if (ds.go !== undefined) { e.preventDefault(); tab = 'more'; sub = ds.go || null; if (ds.go === 'sort' && !t.closest('[data-sortfor]')) sortFor = null; render(); window.scrollTo(0, 0); return; }
   if (ds.stage) { settings.stage = ds.stage; saveSettings(); render(); return; }
   if (ds.flag) { flags[ds.flag] = !flags[ds.flag]; saveFlags(); render(); return; }
   if (ds.ws) { worksStage = ds.ws; render(); return; }
@@ -446,12 +485,20 @@ document.addEventListener('click', async e => {
   if (ds.open) { e.preventDefault(); const d = document.getElementById('d-' + ds.open); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth' }); } return; }
   if (ds.age) { const s = new Set(settings.ages); s.has(ds.age) ? s.delete(ds.age) : s.add(ds.age); settings.ages = [...s]; saveSettings(); render(); return; }
   if (ds.ph) { tab = 'photo'; openPhoto = ds.ph; $('#view').innerHTML = await viewPhotoOne(ds.ph); bind(); bindPhotoForm(ds.ph); window.scrollTo(0, 0); return; }
+  if (ds.sf) { sortPicks[ds.sf] === ds.sv ? delete sortPicks[ds.sf] : sortPicks[ds.sf] = ds.sv; render(); return; }
+  if (ds.sortfor) { e.preventDefault(); sortFor = ds.sortfor; sortPicks = {}; tab = 'more'; sub = 'sort'; render(); window.scrollTo(0, 0); return; }
+  if (ds.pickvar) {
+    if (sortFor) { const b = bushes.find(x => x.id === sortFor); if (b) { b.variety = ds.pickvar; await DB.put('bushes', b); bushes = await DB.all('bushes'); toast('Сорт записан: ' + ds.pickvar); } sortFor = null; }
+    else pendingVar = ds.pickvar;
+    sub = 'bushes'; render(); window.scrollTo(0, 0); return;
+  }
   if (ds.delbush) { await DB.del('bushes', ds.delbush); bushes = await DB.all('bushes'); render(); return; }
   if (ds.delj) { await DB.del('journal', ds.delj); journal = await DB.all('journal'); render(); return; }
   const act = ds.act; if (!act) return;
   if (act === 'wx') refreshWeather(false);
   if (act === 'manual') manualEntry();
   if (act === 'clearSigns') { pickedSigns.clear(); render(); }
+  if (act === 'clearSort') { sortPicks = {}; render(); }
   if (act === 'shoot') $('#fileInput').click();
   if (act === 'back') { openPhoto = null; render(); }
   if (act === 'toSigns') { tab = 'ill'; render(); }
@@ -461,7 +508,7 @@ document.addEventListener('click', async e => {
   if (act === 'addBush') {
     const name = $('#bName').value.trim() || ('Куст ' + (bushes.length + 1));
     await DB.put('bushes', { id: uid(), name, variety: $('#bVar').value, year: $('#bYear').value, note: $('#bNote').value.trim() });
-    bushes = await DB.all('bushes'); toast('Куст добавлен'); render();
+    bushes = await DB.all('bushes'); pendingVar = null; toast('Куст добавлен'); render();
   }
   if (act === 'addJ') {
     const sel = $('#jBush'); const bs = sel ? [...sel.selectedOptions].map(o => o.value) : [];
@@ -481,6 +528,7 @@ document.addEventListener('click', async e => {
 
 document.addEventListener('change', async e => {
   const t = e.target;
+  if (t.dataset.bvar) { const b = bushes.find(x => x.id === t.dataset.bvar); if (b) { b.variety = t.value; await DB.put('bushes', b); bushes = await DB.all('bushes'); toast('Сорт изменён'); render(); } return; }
   if (t.dataset.chk) {
     const day = todayISO(); checks[day] = checks[day] || {};
     const r = RULES.find(x => x.id === t.dataset.chk);

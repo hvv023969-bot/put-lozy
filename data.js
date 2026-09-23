@@ -262,7 +262,66 @@ const VARIETIES = [
   { n: 'Венец Изабеллы', g: 'Оригинальные', ripen: '125–150', frost: '−29…−31', color: 'тёмно-фиолетовый', page: 160 },
   { n: 'Голд Фингер', g: 'Оригинальные', ripen: '110–120', frost: '−23', color: 'золотисто-молочный', page: 162 },
   { n: 'Дарвика', g: 'Оригинальные', ripen: '105–120', frost: '−23', color: 'розовый, красно-фиолетовый', page: 164 },
+  { n: 'Сорт не известен', g: '', ripen: '', frost: '', color: '', page: null },
   { n: 'Другой сорт', g: '', ripen: '', frost: '', color: '', page: null }
 ];
 
 const WORKS = ['Обломка', 'Подвязка', 'Пасынкование', 'Чеканка', 'Нормирование гроздей', 'Удаление листьев', 'Опрыскивание', 'Подкормка корневая', 'Подкормка по листу', 'Полив', 'Рыхление', 'Окучивание', 'Снятие укрытия', 'Укрытие', 'Обрезка', 'Сбор урожая', 'Посадка', 'Нарезка черенков', 'Осмотр', 'Другое'];
+
+// ---------- Определитель сорта по грозди и ягоде (данные из описаний сортов в книге) ----------
+// Значения: массив подходящих вариантов; null — в книге не указано.
+const VFEATS = [
+  { id: 'color', name: 'Цвет ягоды', opts: [['white', 'Белый, зелёный, жёлтый, янтарный'], ['pink', 'Розовый, красный, малиновый'], ['dark', 'Тёмный: фиолетовый, синий, чёрный']] },
+  { id: 'seeds', name: 'Косточки', opts: [['yes', 'Есть косточки'], ['no', 'Нет (кишмиш, мягкие зачатки не в счёт)']] },
+  { id: 'size', name: 'Масса ягоды', opts: [['s', 'Мелкая — до 4 г (меньше вишни)'], ['m', 'Средняя — 4–8 г'], ['l', 'Крупная — больше 8 г (со сливу)']] },
+  { id: 'shape', name: 'Форма ягоды', opts: [['round', 'Круглая'], ['oval', 'Овальная, яйцевидная'], ['long', 'Вытянутая, пальчиковая, изогнутая']] },
+  { id: 'taste', name: 'Вкус и аромат', opts: [['muscat', 'Мускатный'], ['straw', 'Земляничный, «изабельный»'], ['plain', 'Простой, без особого аромата']] },
+  { id: 'bunch', name: 'Масса грозди', opts: [['s', 'Маленькая — до 300 г'], ['m', 'Средняя — 300–800 г'], ['l', 'Крупная — больше 800 г']] },
+  { id: 'ripe', name: 'Когда созрел (у вас)', opts: [['jul', 'Июль'], ['aug', 'Август'], ['sep', 'Сентябрь и позже']] }
+];
+const VTRAITS = {
+  'Ромбик':             { color: ['dark'], seeds: ['yes'], size: ['l'], shape: ['long', 'oval'], taste: ['plain'], bunch: ['m'], ripe: ['jul', 'aug'], note: 'ягоды ромбовидные, почти чёрные, привкус чернослива' },
+  'Гарольд':            { color: ['white'], seeds: ['yes'], size: ['m'], shape: ['oval'], taste: ['muscat'], bunch: ['m'], ripe: ['jul'], note: 'янтарные, коричневая точка на кончике ягоды' },
+  'Дынька':             { color: ['pink'], seeds: null, size: ['l'], shape: ['oval'], taste: ['muscat'], bunch: ['m', 'l'], ripe: ['jul', 'aug'], note: 'светло-малиновые с рёбрами, как дольки дыни' },
+  'Басанти':            { color: ['pink'], seeds: null, size: ['l'], shape: ['oval', 'round'], taste: ['muscat', 'plain'], bunch: ['m', 'l'], ripe: ['jul', 'aug'], note: 'очень крупные 16–18 г, часто белое пятно на кончике' },
+  'Рэмбо':              { color: ['dark'], seeds: null, size: ['l'], shape: ['long'], taste: ['plain'], bunch: ['l'], ripe: ['aug'], note: 'до 21 г, удлинённо-яйцевидные' },
+  'Энергодар':          { color: ['dark', 'pink'], seeds: null, size: ['l'], shape: ['oval'], taste: ['muscat'], bunch: ['l'], ripe: ['aug'], note: 'каплевидные, красные или тёмно-фиолетовые' },
+  'Днепровский сувенир': { color: ['dark'], seeds: null, size: ['l'], shape: ['long'], taste: ['plain'], bunch: ['l'], ripe: ['aug'], note: 'пальчиковые, тёмно-фиолетовые' },
+  'Румба':              { color: ['pink'], seeds: ['yes'], size: ['l', 'm'], shape: ['oval'], taste: ['plain'], bunch: ['m', 'l'], ripe: ['jul', 'aug'], note: 'розовые, лёгкий вишнёвый аромат' },
+  'Байконур':           { color: ['dark'], seeds: ['yes'], size: ['l', 'm'], shape: ['long'], taste: ['plain'], bunch: ['m', 'l'], ripe: ['aug', 'sep'], note: 'цвета сливы, с заострённым кончиком' },
+  'Академик':           { color: ['dark'], seeds: ['yes'], size: ['l'], shape: ['oval'], taste: ['plain'], bunch: ['m', 'l'], ripe: ['aug'], note: 'тёмные, без особого аромата' },
+  'Солнышко':           { color: ['white'], seeds: ['yes'], size: ['l'], shape: ['oval'], taste: ['muscat'], bunch: ['m', 'l'], ripe: ['aug'], note: 'золотистые с розовым румянцем на солнце' },
+  'Цимус':              { color: ['white'], seeds: ['no'], size: ['m'], shape: ['oval'], taste: ['muscat'], bunch: ['l'], ripe: ['aug'], note: 'бело-зелёные, мускат с цитрусом' },
+  'Велес':              { color: ['pink'], seeds: ['no'], size: ['m'], shape: ['oval'], taste: ['muscat'], bunch: ['l', 'm'], ripe: ['aug'], note: 'ярко-розовые, на солнце янтарные' },
+  'Юпитер':             { color: ['dark'], seeds: ['no'], size: ['m'], shape: ['oval'], taste: ['muscat'], bunch: ['s', 'm'], ripe: ['aug'], note: 'тёмно-фиолетовые с синеватым налётом' },
+  'Ириска':             { color: ['white'], seeds: ['no'], size: ['m'], shape: ['oval'], taste: ['plain'], bunch: ['l', 'm'], ripe: ['aug'], note: 'жёлтые, карамельно-медовый вкус' },
+  'Кишмиш 342':         { color: ['white'], seeds: ['no'], size: ['s'], shape: ['oval'], taste: ['muscat'], bunch: ['m'], ripe: ['jul', 'aug'], note: 'зелёно-золотистые, при полной зрелости розоватые' },
+  'Солярис':            { color: ['white'], seeds: null, size: ['s', 'm'], shape: ['round'], taste: ['muscat'], bunch: ['m'], ripe: ['aug', 'sep'], note: 'технический, жёлто-зелёные' },
+  'Супага':             { color: ['white'], seeds: null, size: ['m'], shape: ['round'], taste: ['straw'], bunch: ['m'], ripe: ['aug', 'sep'], note: 'технический, вкус земляники и ананаса' },
+  'Каберне Кортис':     { color: ['dark'], seeds: null, size: ['s'], shape: ['round'], taste: ['plain'], bunch: ['s', 'm'], ripe: ['sep'], note: 'технический, мелкие чернильные, терпкие' },
+  'Красень':            { color: ['dark'], seeds: ['no'], size: ['s'], shape: ['round'], taste: ['muscat'], bunch: ['m'], ripe: ['aug'], note: 'почти чёрные, мелкие, без косточек' },
+  'Аколон':             { color: ['dark'], seeds: null, size: ['s'], shape: ['round'], taste: ['plain'], bunch: ['m'], ripe: ['aug', 'sep'], note: 'технический, тёмно-фиолетовые' },
+  'Рубин Ульяновский':  { color: null, seeds: ['no'], size: ['m', 's'], shape: ['round'], taste: ['straw'], bunch: null, ripe: ['aug'], note: 'сильный аромат земляники' },
+  'Сомерсет Сидлисс':   { color: ['pink', 'white'], seeds: ['no'], size: ['s'], shape: ['round'], taste: ['straw'], bunch: ['s'], ripe: ['aug', 'sep'], note: 'мелкие 1,3–2 г, от янтарных до розово-красных' },
+  'Адельмина':          { color: ['white'], seeds: null, size: ['s'], shape: ['round'], taste: ['plain'], bunch: ['s'], ripe: ['aug', 'sep'], note: 'технический, густой восковой налёт' },
+  'Юкка':               { color: ['dark'], seeds: null, size: ['s', 'm'], shape: null, taste: ['straw'], bunch: ['s'], ripe: ['aug', 'sep'], note: 'лист трёхлопастной, почти цельный; привкус «лабруски»' },
+  'Зилга':              { color: ['dark'], seeds: ['yes'], size: ['s'], shape: ['round'], taste: ['straw', 'muscat'], bunch: ['s'], ripe: ['aug', 'sep'], note: 'тёмно-синие, мякоть слизистая, кисло-сладкие' },
+  'ES-9-7-28':          { color: ['pink'], seeds: ['yes'], size: ['s'], shape: ['round'], taste: ['plain'], bunch: ['s'], ripe: ['aug'], note: 'розовые с налётом, кисло-сладкие' },
+  'Один (Амурский прорыв)': { color: ['dark'], seeds: null, size: ['s'], shape: ['round'], taste: ['plain'], bunch: ['m'], ripe: ['aug'], note: 'тёмно-синие, очень сладкие' },
+  'Венец Изабеллы':     { color: ['dark'], seeds: null, size: null, shape: null, taste: ['straw'], bunch: ['m'], ripe: ['sep'], note: 'изабельный вкус, мякоть слизистая, поздний' },
+  'Голд Фингер':        { color: ['white'], seeds: ['yes'], size: ['m', 'l'], shape: ['long'], taste: ['plain'], bunch: ['m'], ripe: ['aug'], note: 'жёлтые дугообразно изогнутые ягоды — узнаётся сразу' },
+  'Дарвика':            { color: ['pink', 'dark'], seeds: ['yes'], size: ['l'], shape: ['oval'], taste: ['muscat'], bunch: ['l'], ripe: ['aug'], note: 'розовые до красно-фиолетовых, плотная гроздь' }
+};
+
+// Ссылки на фотогалерею сортов на сайте автора книги (vinograd73.ru, ЛПХ Петра Данилюка).
+// Фото не копируются и не хранятся в приложении — только ссылка, открывается в браузере при наличии сети.
+// Совпадение установлено по названию сорта, не подтверждено автором лично — поэтому пометка "предположительно".
+const PHOTO_LINKS = {
+  'Румба':          { url: 'https://vinograd73.ru/gall.php?active=5&gal=rumba' },
+  'Велес':          { url: 'https://vinograd73.ru/gall.php?active=5&gal=km_veles', note: 'на сайте — как «КМ-Велес»' },
+  'Юпитер':         { url: 'https://vinograd73.ru/gall.php?active=5&gal=km_yupiter', note: 'на сайте — как «КМ-Юпитер»' },
+  'Кишмиш 342':     { url: 'https://vinograd73.ru/gall.php?active=5&gal=km342', note: 'на сайте — как «КМ-342»' },
+  'Красень':        { url: 'https://vinograd73.ru/gall.php?active=5&gal=km_krasen', note: 'на сайте — как «КМ-Красень»' },
+  'Юкка':           { url: 'https://vinograd73.ru/gall.php?active=5&gal=yukka' },
+  'ES-9-7-28':      { url: 'https://vinograd73.ru/gall.php?active=5&gal=es9-7-28' }
+};
