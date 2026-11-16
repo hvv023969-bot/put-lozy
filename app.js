@@ -631,7 +631,7 @@ function viewSettings() {
     <div class="card"><h2>Резервная копия</h2><div class="muted small">Все данные живут только в этом телефоне. Делайте копию — её можно перенести на другой телефон или компьютер.</div>
     <div class="sticky-actions"><button data-act="export">Сохранить копию (без фото)</button><button class="ghost" data-act="exportPh">С фото</button><button class="ghost" data-act="import">Восстановить из файла</button></div></div>
     <div class="card"><h2>О справочнике</h2><div class="small">Основа — книга П. П. Данилюка и В. С. Мурыгина «Виноград. Путь лозы. Шпаргалка-трекер: от черенка до грозди» (АСТ, 2026). Номера страниц указаны у каждого пункта. Пункты «общая практика» и «другие источники» — не из книги. Справочник для личного пользования.</div>
-    <div class="muted small" style="margin-top:6px">Версия 1.1</div></div>`;
+    <div class="muted small" style="margin-top:6px">Версия 1.10 от 16.11.2026 (чек-лист: разовые задачи не сбрасываются)</div></div>`;
 }
 
 // ---------- события ----------
