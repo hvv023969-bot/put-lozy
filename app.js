@@ -11,6 +11,8 @@ const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'и�
 const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const fmtDate = iso => { const d = new Date(iso + 'T12:00'); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 const fmtT = v => v == null || isNaN(v) ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(Math.round(v)) + '°';
+// ключ отметки: разовые задачи («Сделать») помним на весь этап сезона, проверки — на день
+const checkKey = (r, stage) => r.kind === 'do' ? `s|${year}|${stage}` : todayISO();
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const srcLabel = r => r.gen ? '<span class="src">общая практика</span>' : r.ext ? '<span class="src">другие источники</span>' : r.src ? `<span class="src">книга, с. ${r.src}</span>` : '';
 
@@ -299,15 +301,16 @@ async function viewToday() {
 
   // чек-лист
   const list = rulesFor(stage, ages, w).sort((a, b) => ORDER[a.kind] - ORDER[b.kind]);
-  const day = todayISO(); const done = checks[day] || {};
-  const n = list.filter(r => r.kind !== 'warn' && r.kind !== 'dont').length, k = list.filter(r => done[r.id]).length;
+  const day = todayISO();
+  const isDone = r => !!(checks[checkKey(r, stage)] || {})[r.id];
+  const n = list.filter(r => r.kind !== 'warn' && r.kind !== 'dont').length, k = list.filter(r => isDone(r)).length;
   h += `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Чек-лист на сегодня</h2><span class="muted small">${k} из ${n}</span></div><ul class="check">` +
     list.map(r => {
-      const d = done[r.id];
+      const d = isDone(r);
       const box = (r.kind === 'warn' || r.kind === 'dont') ? '<span style="width:22px;flex:0 0 22px;text-align:center">' + (r.kind === 'warn' ? '⚠' : '⛔') + '</span>' : `<input type="checkbox" data-chk="${r.id}" ${d ? 'checked' : ''}>`;
       return `<li class="${d ? 'done' : ''}">${box}<div><div class="tx"><span class="tag ${KIND[r.kind][1]}">${KIND[r.kind][0]}</span>${esc(r.text)}</div>` +
         (r.why ? `<div class="why">${esc(r.why)}</div>` : '') + (r.dyn ? `<div class="dyn">${esc(dynText(r.dyn, w, stage))}</div>` : '') + srcLabel(r) + '</div></li>';
-    }).join('') + '</ul><div class="muted small" style="margin-top:8px">Отмеченное попадает в журнал работ.</div></div>';
+    }).join('') + '</ul><div class="muted small" style="margin-top:8px">Отмеченное попадает в журнал работ. Задачи «Сделать» остаются выполненными до смены этапа сезона, «Проверить» — обновляются каждый день.</div></div>';
   return h;
 }
 
@@ -715,17 +718,19 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset.bvar) { const b = bushes.find(x => x.id === t.dataset.bvar); if (b) { b.variety = t.value; await DB.put('bushes', b); bushes = await DB.all('bushes'); toast('Сорт изменён'); render(); } return; }
   if (t.dataset.chk) {
-    const day = todayISO(); checks[day] = checks[day] || {};
+    const day = todayISO();
     const r = RULES.find(x => x.id === t.dataset.chk);
+    const key = checkKey(r, currentStage(weatherSummary())); checks[key] = checks[key] || {};
     if (t.checked) {
-      const jid = uid(); checks[day][r.id] = jid;
+      const jid = uid(); checks[key][r.id] = jid;
       await DB.put('journal', { id: jid, at: new Date().toISOString(), date: day, work: 'Чек-лист', note: r.text, drug: '', bushes: [] });
     } else {
-      const jid = checks[day][r.id]; if (typeof jid === 'string') await DB.del('journal', jid).catch(() => {});
-      delete checks[day][r.id];
+      const jid = checks[key][r.id]; if (typeof jid === 'string') await DB.del('journal', jid).catch(() => {});
+      delete checks[key][r.id];
     }
     // храним отметки только за последние 60 дней
-    const keys = Object.keys(checks).sort(); while (keys.length > 60) delete checks[keys.shift()];
+    const keys = Object.keys(checks).filter(k => /^\d{4}-\d\d-\d\d$/.test(k)).sort(); while (keys.length > 60) delete checks[keys.shift()];
+    Object.keys(checks).forEach(k => { if (k.startsWith('s|') && Number(k.split('|')[1]) < year - 1) delete checks[k]; });
     LS.set('checks', checks); journal = await DB.all('journal'); render();
   }
 });
